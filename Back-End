@@ -1,1 +1,72 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract subsidyBackend {
+    // Global variable to store central government schemes:
+    uint256 public centralGovSchemes = 100000000;
+    uint256 public totalBeneficiaries = 0;
+    uint256 public constant SCALE = 10**18;
+    uint public FinalId = 0;
+    // uint[] public adhaarNumbers;
+    // Variable to store amount each distributor recieves.its
+    // better to use mapping along with a function here, we can store
+    // each distributors address along with a necessary fund
+    mapping(uint256 => uint256) public distributedFunds;
+    // I am mapping integer to integer: Logic-> each distributor will have a unique id with a balance associated wtih it
+    mapping(uint256 => uint256) public distributorWeight;
+    // this map is used to identify how much funds each distributor will recieve
+    mapping(uint256 => uint256[]) public distributorToBeneficiary;
+    // This is to map each distributor to a beneficiary
+    mapping(uint256 => bool) public beneficiary;
+    // This is to check if a distributor gets his funds
+    mapping(uint256 => bool) public beneficiaryPresence;
+
+    // This is to check if a beneficiary can recieve money online.
+
+    // -------------------------------------------------------------
+    // in all the functions below we are just updating the variables
+    // -------------------------------------------------------------
+    // Function for government to send money to distributor
+    // One thing we have to consider is how much money each distributor
+    // recieves, this can be calculated using mapping distributorToBeneficiary
+    // and a global variable totalBeneficiaries
+    // we can use math to do that take the fraction of number of beneficiary
+    // to that particular distributor to the total number of beneficiaries
+    // and multiply it with centralGovSchemes and update it with the map distributor weight
+    function CentralToDistributor(uint256 distributorId) public  {
+        uint256 weight = (distributorWeight[distributorId] * SCALE) / totalBeneficiaries*centralGovSchemes;
+        centralGovSchemes-=weight;
+        distributedFunds[distributorId] = weight;
+        FinalId+=1;
+    }
+    // ==============================================================
+    // Before allocation funds to every distributor we should know the number of beneficiary each guy holds
+    // we can maintain the state using the mapping distributor weight
+
+    function AddBeneficiary(uint256 distributorId, uint256 beneficiaryAdhaar, bool presentOnline)
+        public
+    {
+        // we can update both distributor weight and distributorToBeneficiary mappings over here
+        // and also check if the beneficiary can recieve the grants through online mediums
+        distributorWeight[distributorId] += 1;
+        distributorToBeneficiary[distributorId].push(beneficiaryAdhaar);
+        beneficiaryPresence[distributorId] = presentOnline;
+    }
+    // ---------------------------------------------------------------------------------
+    // This is to check the distribution status of the distributor
+    function distributorFunds(
+        uint256 distributorId,
+        uint256 associatedBeneficiaries
+    ) public {
+        if(beneficiaryPresence[associatedBeneficiaries]){
+            distributedFunds[distributorId] -= 1000;
+            // Let 1000 be the basic subsidy amount for now
+            beneficiary[associatedBeneficiaries] = true;
+        }
+        else{
+            // Write the logic here to deal with subsidy when the recipient have no online presence
+        }
+    }
+    // ----------------------------------------------------------------------------------
+}
 
