@@ -8,6 +8,10 @@ contract subsidyBackend {
     uint256 public standUpIndiaScheme = 100000000;
     uint256 public ayushManBharat = 100000000;
     uint256 public PMKISAN = 10000000;
+    uint public constant BBBP = 1300;
+    uint public constant SUIS = 1600;
+    uint public constant AMB = 2000;
+    uint public constant PMK = 5000;
     uint256 public totalBeneficiaries = 0;
     uint256 public constant SCALE = 10**18;
     uint public FinalId = 0;
@@ -22,11 +26,14 @@ contract subsidyBackend {
     mapping(uint256 => uint256[]) public distributorToBeneficiary;
     // This is to map each distributor to a beneficiary
     mapping(uint256 => bool) public beneficiary;
+    // mapping(uint256 => bool) public beneficiarySUIS;
+    // mapping(uint256 => bool) public beneficiaryAMB;
+    // mapping(uint256 => bool) public beneficiaryPMK;
     // This is to check if a distributor gets his funds
     mapping(uint256 => bool) public beneficiaryPresence;
-
+    // This is to map each beneficiary to his related scheme
+    mapping(uint256 => uint) public beneficiaryScheme; // {1 for BBBP, 2 for SIS, 3 for AMB, 4 for PMKISAN};
     // This is to check if a beneficiary can recieve money online.
-
     // -------------------------------------------------------------
     // in all the functions below we are just updating the variables
     // -------------------------------------------------------------
@@ -37,9 +44,9 @@ contract subsidyBackend {
     // we can use math to do that take the fraction of number of beneficiary
     // to that particular distributor to the total number of beneficiaries
     // and multiply it with centralGovSchemes and update it with the map distributor weight
-    function CentralToDistributor(uint256 distributorId) public  {
-        uint256 weight = (distributorWeight[distributorId] * SCALE) / totalBeneficiaries*centralGovSchemes;
-        centralGovSchemes-=weight;
+    function CentralToDistributor(uint256 distributorId,uint scheme) public  {
+        uint256 weight = (distributorWeight[distributorId] * SCALE) / totalBeneficiaries*scheme;
+        scheme-=weight;
         distributedFunds[distributorId] = weight;
         FinalId+=1;
     }
@@ -47,7 +54,7 @@ contract subsidyBackend {
     // Before allocation funds to every distributor we should know the number of beneficiary each guy holds
     // we can maintain the state using the mapping distributor weight
 
-    function AddBeneficiary(uint256 distributorId, uint256 beneficiaryAdhaar, bool presentOnline)
+    function AddBeneficiary(uint256 distributorId, uint256 beneficiaryAdhaar, bool presentOnline,uint schemeType)
         public
     {
         // we can update both distributor weight and distributorToBeneficiary mappings over here
@@ -56,15 +63,17 @@ contract subsidyBackend {
         distributorWeight[distributorId] += 1;
         distributorToBeneficiary[distributorId].push(beneficiaryAdhaar);
         beneficiaryPresence[distributorId] = presentOnline;
+        beneficiaryScheme[beneficiaryAdhaar] = schemeType;
     }
     // ---------------------------------------------------------------------------------
     // This is to check the distribution status of the distributor
     function distributorFunds(
         uint256 distributorId,
-        uint256 associatedBeneficiaries
+        uint256 associatedBeneficiaries,
+        uint256 schemeBenefit
     ) public {
         if(beneficiaryPresence[associatedBeneficiaries]){
-            distributedFunds[distributorId] -= 1000;
+            distributedFunds[distributorId] -= schemeBenefit;
             // Let 1000 be the basic subsidy amount for now
             beneficiary[associatedBeneficiaries] = true;
         }
@@ -80,7 +89,6 @@ contract subsidyBackend {
         uint256 distributorId, 
         uint256 associatedBeneficiary
     );
-
     // Function to handle offline subsidy distribution
     function offlineDistribution(uint256 distributorId, uint256 associatedBeneficiary) public {
         require(!beneficiary[associatedBeneficiary], "Beneficiary has already claimed the funds");
@@ -93,7 +101,6 @@ contract subsidyBackend {
         uint256 associatedBeneficiary, 
         string statement
     );
-
     // Function to check the status of a beneficiary's scheme
     function checkStatus(uint256 associatedBeneficiaries) public {
         if(beneficiary[associatedBeneficiaries]){
