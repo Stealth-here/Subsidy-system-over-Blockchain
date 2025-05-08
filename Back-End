@@ -4,6 +4,10 @@ pragma solidity ^0.8.0;
 contract subsidyBackend {
     // Global variable to store central government schemes:
     uint256 public centralGovSchemes = 100000000;
+    uint256 public BetiBachaoBetiPadhao = 10000000;
+    uint256 public standUpIndiaScheme = 100000000;
+    uint256 public ayushManBharat = 100000000;
+    uint256 public PMKISAN = 10000000;
     uint256 public totalBeneficiaries = 0;
     uint256 public constant SCALE = 10**18;
     uint public FinalId = 0;
@@ -48,6 +52,7 @@ contract subsidyBackend {
     {
         // we can update both distributor weight and distributorToBeneficiary mappings over here
         // and also check if the beneficiary can recieve the grants through online mediums
+        totalBeneficiaries+=1;
         distributorWeight[distributorId] += 1;
         distributorToBeneficiary[distributorId].push(beneficiaryAdhaar);
         beneficiaryPresence[distributorId] = presentOnline;
@@ -63,10 +68,39 @@ contract subsidyBackend {
             // Let 1000 be the basic subsidy amount for now
             beneficiary[associatedBeneficiaries] = true;
         }
-        else{
-            // Write the logic here to deal with subsidy when the recipient have no online presence
-        }
+        // I am going to handle offline distributor outside of this function
     }
     // ----------------------------------------------------------------------------------
-}
+    // Function for handling offline distribution of funds,
+    // My logic here would be making a separate portal for the distributor from where he can log in the 
+    // blockchain whenever he distributes the funds
+    // Event declaration
+    event OfflineDistribution(
+        address indexed distributor, 
+        uint256 distributorId, 
+        uint256 associatedBeneficiary
+    );
 
+    // Function to handle offline subsidy distribution
+    function offlineDistribution(uint256 distributorId, uint256 associatedBeneficiary) public {
+        require(!beneficiary[associatedBeneficiary], "Beneficiary has already claimed the funds");
+        beneficiary[associatedBeneficiary] = true;
+        emit OfflineDistribution(msg.sender, distributorId, associatedBeneficiary);
+    }
+    // This event is for the beneficiary to check status of his scheme
+    event CheckStatus(
+        address indexed beneficiaryAddress, 
+        uint256 associatedBeneficiary, 
+        string statement
+    );
+
+    // Function to check the status of a beneficiary's scheme
+    function checkStatus(uint256 associatedBeneficiaries) public {
+        if(beneficiary[associatedBeneficiaries]){
+            emit CheckStatus(msg.sender, associatedBeneficiaries, "Your subsidy has been claimed");
+        }
+        else{
+            emit CheckStatus(msg.sender,associatedBeneficiaries, "Your subsidy has'nt been claimed yet");
+        }
+    }
+}
