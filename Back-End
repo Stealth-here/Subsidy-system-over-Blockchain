@@ -1,71 +1,129 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+    // contracts/SubsidyBackend.sol
+    // SPDX-License-Identifier: MIT
+    pragma solidity ^0.8.0;
 
-contract subsidyBackend {
-    uint256 public centralGovSchemes = 100000000;
-    uint256 public totalBeneficiaries = 0;
-    uint256 public FinalId = 0;
-    uint256 public constant FIXED_SUBSIDY = 1000;
-    uint256 public constant SUBSIDY_INTERVAL = 30 days;
+    contract SubsidyBackend {
+        // === Scheme Pools ===
+        uint256 public constant POOL_SIZE = 10_000;
+        mapping(uint256 => uint256) public schemePool;                // schemeId → remaining pool
 
-    mapping(uint256 => uint256) public distributedFunds;
-    mapping(uint256 => uint256) public distributorWeight;
-    mapping(uint256 => uint256[]) public distributorToBeneficiary;
-    mapping(uint256 => bool) public beneficiary;
-    mapping(uint256 => bool) public beneficiaryPresence;
-    mapping(uint256 => uint256) public offlineSubsidyPending; // beneficiaryAdhaar => pendingAmount
-    mapping(uint256 => bool) public isRegistered; //to track whether a beneficiary is already registered.
-    mapping(uint256 => uint256) public lastClaimTime; // to store the last subsidy claim timestamp per beneficiary
+        // === Distributor Balances per Scheme ===
+        mapping(uint256 => mapping(uint256 => uint256)) public distFunds;
 
-    event FundsDistributed(uint256 distributorId, uint256 amount);
-    // When a beneficiary is added, their distributor immediately receives funds.
-    function AddBeneficiary(uint256 distributorId,uint256 beneficiaryAdhaar,bool presentOnline) public {
-        require(centralGovSchemes >= FIXED_SUBSIDY, "Not enough central funds left");
-        require(!isRegistered[beneficiaryAdhaar], "Beneficiary already registered");
-        // Update mappings
-        distributorWeight[distributorId] += 1;
-        distributorToBeneficiary[distributorId].push(beneficiaryAdhaar);
-        totalBeneficiaries += 1;
-        beneficiaryPresence[beneficiaryAdhaar] = presentOnline;
-        isRegistered[beneficiaryAdhaar] = true;
+        // === Beneficiary Lists: schemeId → distributorId → list of Aadhaar IDs ===
+        mapping(uint256 => mapping(uint256 => uint256[])) public distToBen;
 
-        // Allocate funds directly to distributor
-        distributedFunds[distributorId] += FIXED_SUBSIDY;
-        centralGovSchemes -= FIXED_SUBSIDY;
-        FinalId += 1;
-        emit FundsDistributed(distributorId, FIXED_SUBSIDY);
+        // === Claim Tracking ===
+        mapping(uint256 => bool) public onchain;    // Aadhaar → claimed on-chain
+        mapping(uint256 => bool) public offline;    // Aadhaar → claimed offline
+        mapping(uint256 => uint256) public totalBenPerScheme;
+
+        // === Initialization with hard-coded beneficiaries ===
+        constructor() {
+            // Initialize the two pools
+            schemePool[1] = POOL_SIZE;    // BBBP
+            schemePool[2] = POOL_SIZE;    // AMB
+
+            // Distributor 1, Scheme 1 (BBBP) beneficiaries (3 IDs)
+            {
+                uint256[] memory list= new uint256[](3);
+                list[0] = 1001;
+                list[1] = 1002;
+                list[2] = 1003;
+                _addBen(1, 1, list);
+                totalBenPerScheme[1] += list.length;
+
+            }
+
+            // Distributor 1, Scheme 2 (AMB) beneficiaries (2 IDs)
+            {
+                uint256[] memory list= new uint256[](2);
+                list[0] = 2001;
+                list[1] = 2002;
+                _addBen(2, 1, list);
+                totalBenPerScheme[2] += list.length;
+
+            }
+
+            // Distributor 2, Scheme 1 (BBBP) beneficiaries (2 IDs)
+            {
+                uint256[] memory list= new uint256[](2);
+                list[0] = 1101;
+                list[1] = 1102;
+                _addBen(1, 2, list);
+                totalBenPerScheme[1] += list.length;
+
+            }
+
+            // Distributor 2, Scheme 2 (AMB) beneficiaries (3 IDs)
+            {
+                uint256[] memory list= new uint256[](3);
+                list[0] = 2101;
+                list[1] = 2102;
+                list[2] = 2103;
+                _addBen(2, 2, list);
+                totalBenPerScheme[2] += list.length;
+
+            }
+        }
+
+        // Internal helper to batch-load beneficiaries
+        function _addBen(
+            uint256 schemeId,
+            uint256 distributorId,
+            uint256[] memory list
+        ) internal {
+            for (uint i = 0; i < list.length; i++) {
+                distToBen[schemeId][distributorId].push(list[i]);
+            }
+        }
+        function getBeneficiaries(uint256 schemeId, uint256 distributorId)
+    external view returns (uint256[] memory)
+    {
+    return distToBen[schemeId][distributorId];
     }
 
-    // Get a list of beneficiaries for a distributor
-    function getBeneficiaries(uint256 distributorId) public view returns (uint256[] memory) {
-        return distributorToBeneficiary[distributorId];
-    }
-    // Get if a beneficiary has online presence
-    function getBeneficiaryPresence(uint256 beneficiaryAdhaar) public view returns (bool) {
-        return beneficiaryPresence[beneficiaryAdhaar];
-    }
-
-    // Total remaining funds
-    function getRemainingCentralFunds() public view returns (uint256) {
-        return centralGovSchemes;
+        // === Pull from pool into distributor balance ===
+        function allocateDistributor(uint256 schemeId, uint256 distributorId) external {
+        uint256 distCount = distToBen[schemeId][distributorId].length;
+        uint256 totalCount = totalBenPerScheme[schemeId];
+        require(distCount > 0 && totalCount > 0, "No beneficiaries");
+        // calculate ratio * POOL_SIZE
+        uint256 amount = (distCount * POOL_SIZE) / totalCount;
+        distFunds[distributorId][schemeId] = amount;
     }
 
-    // Called when distributor sends subsidy to one of their beneficiaries
-    function distributorFunds(uint256 distributorId,uint256 associatedBeneficiary) public {
-        require(distributedFunds[distributorId] >= FIXED_SUBSIDY, "Insufficient distributor balance");
-        require(isRegistered[associatedBeneficiary], "Beneficiary not registered");
-        require(
-        block.timestamp - lastClaimTime[associatedBeneficiary] >= SUBSIDY_INTERVAL,
-        "Subsidy already claimed recently"
-    );
-        distributedFunds[distributorId] -= FIXED_SUBSIDY;
-        lastClaimTime[associatedBeneficiary] = block.timestamp;
-        if (beneficiaryPresence[associatedBeneficiary]) {
-            beneficiary[associatedBeneficiary] = true;
-        } else {
-            // Offline handling logic can go here
-            // Offline beneficiary: log it for manual processing
-            offlineSubsidyPending[associatedBeneficiary] += FIXED_SUBSIDY;
+        // === Allocate on-chain to one beneficiary ===
+        function payOnChain(
+            // uint256 schemeId,
+            // uint256 distributorId,
+            uint256 benAdhaar
+        ) external {
+            require(!onchain[benAdhaar] && !offline[benAdhaar], "Already claimed");
+            onchain[benAdhaar] = true;
+        }
+
+        // === Record offline for one beneficiary ===
+        event Offline(uint256 schemeId, uint256 distributorId, uint256 benAdhaar);
+        function payOffline(
+            uint256 schemeId,
+            uint256 distributorId,
+            uint256 benAdhaar
+        ) external {
+            require(!onchain[benAdhaar] && !offline[benAdhaar], "Already claimed");
+            offline[benAdhaar] = true;
+            emit Offline(schemeId, distributorId, benAdhaar);
+        }
+
+        // === Check status ===
+        event CheckStatus(address who, uint256 benAdhaar, string msg);
+        function checkStatus(uint256 benAdhaar) external {
+            if (onchain[benAdhaar]) {
+                emit CheckStatus(msg.sender, benAdhaar, "Claimed on-chain");
+            } else if (offline[benAdhaar]) {
+                emit CheckStatus(msg.sender, benAdhaar, "Recorded offline");
+            } else {
+                emit CheckStatus(msg.sender, benAdhaar, "Not yet claimed");
+            }
         }
     }
-}
